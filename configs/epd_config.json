@@ -1,0 +1,25 @@
+{
+    "wave_channels": 512,
+    "sample_rate_hz": 20,
+    "time_window": 32,
+    "polish_heads": 1,
+    "sg_filter": {
+        "window_size": 11,
+        "poly_order": 3
+    },
+    "endpoint_threshold": 0.85,
+    "tensorrt": {
+        "enabled": true,
+        "gpu_device_id": 0,
+        "engine_path": "models/epd_cnn_bilstm.engine"
+    },
+    "preprocessing": {
+        "normalize": true,
+        "pad_edges": true
+    },
+    "postprocessing": {
+        "prob_smooth_window": 5,
+        "streak_threshold": 3,
+        "min_confidence": 0.5
+    }
+}
