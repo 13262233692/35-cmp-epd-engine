@@ -17,7 +17,10 @@ EpdEngine::EpdEngine()
     , streak_threshold_(3)
     , endpoint_threshold_(0.85f)
     , batch_start_frame_(0)
-    , lstm_reset_required_(false) {
+    , lstm_reset_required_(false)
+    , grad_cam_enabled_(false)
+    , grad_cam_dirty_(false)
+    , grad_cam_trigger_count_(0) {
 }
 
 EpdEngine::~EpdEngine() {
@@ -40,6 +43,25 @@ bool EpdEngine::init(const EpdConfig& config) {
     if (!trt_engine_->init(config)) {
         std::cerr << "[EPD] Failed to initialize TensorRT engine" << std::endl;
         return false;
+    }
+
+    grad_cam_enabled_ = config.grad_cam.enable;
+    if (grad_cam_enabled_) {
+        grad_cam_ = std::make_unique<GradCam>();
+        GradCamConfig gc_cfg = config.grad_cam;
+        int32_t conv_ch = config.grad_cam.conv_channels;
+        int32_t conv_sp = config.grad_cam.conv_spatial_size;
+        if (!grad_cam_->init(gc_cfg, conv_ch, conv_sp)) {
+            std::cerr << "[EPD] Failed to initialize Grad-CAM, disabling" << std::endl;
+            grad_cam_enabled_ = false;
+            grad_cam_.reset();
+        } else {
+            std::cout << "[EPD] Grad-CAM explainability enabled" << std::endl;
+            std::cout << "[EPD]   Trigger threshold: " << gc_cfg.trigger_threshold << std::endl;
+            std::cout << "[EPD]   Heatmap: " << gc_cfg.heatmap_width
+                      << "x" << gc_cfg.heatmap_height << " px" << std::endl;
+            std::cout << "[EPD]   Wafer diameter: " << gc_cfg.wafer_diameter_mm << " mm" << std::endl;
+        }
     }
 
     initialized_ = true;
@@ -255,6 +277,21 @@ EpdStatus EpdEngine::process_frame(const SpectrumFrame& frame, EpdResult& result
 
         snapshot_buffer_.push(infer_result);
 
+        if (grad_cam_enabled_ && grad_cam_ &&
+            infer_result.endpoint_probability >= config_.grad_cam.trigger_threshold) {
+            Tensor3D tensor_for_cam;
+            if (reorganizer_->get_tensor(tensor_for_cam)) {
+                GradCamResult cam_result;
+                if (grad_cam_->compute_with_approx(tensor_for_cam,
+                                                    infer_result.endpoint_probability,
+                                                    cam_result)) {
+                    last_grad_cam_ = cam_result;
+                    grad_cam_dirty_ = true;
+                    grad_cam_trigger_count_++;
+                }
+            }
+        }
+
         if (current_batch_.is_active()) {
             current_batch_.frames_processed++;
         }
@@ -347,6 +384,10 @@ size_t EpdEngine::get_total_memory_allocated() const {
     }
     total += prob_history_.size() * sizeof(float);
 
+    if (last_grad_cam_.valid) {
+        total += last_grad_cam_.total_bytes();
+    }
+
     return total;
 }
 
@@ -400,10 +441,88 @@ void EpdEngine::reset() {
     if (trt_engine_) {
         trt_engine_->reset();
     }
+    if (grad_cam_) {
+        grad_cam_->reset();
+    }
 
     reset_internal_state(true);
 
     initialized_ = false;
+}
+
+bool EpdEngine::get_last_grad_cam(GradCamResult& result) const {
+    if (!initialized_ || !grad_cam_enabled_ || !grad_cam_) {
+        return false;
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    if (!last_grad_cam_.valid) {
+        return false;
+    }
+
+    result = last_grad_cam_;
+    return true;
+}
+
+bool EpdEngine::trigger_grad_cam_now(GradCamResult& result) {
+    if (!initialized_ || !grad_cam_enabled_ || !grad_cam_) {
+        return false;
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    Tensor3D tensor;
+    if (!reorganizer_->get_tensor(tensor)) {
+        return false;
+    }
+
+    EpdResult epd_result = last_result_;
+
+    if (!grad_cam_->compute_with_approx(tensor, epd_result.endpoint_probability, result)) {
+        return false;
+    }
+
+    last_grad_cam_ = result;
+    grad_cam_dirty_ = true;
+    grad_cam_trigger_count_++;
+
+    return true;
+}
+
+bool EpdEngine::get_grad_cam_colormap(std::vector<HeatmapPixel>& colormap) const {
+    if (!initialized_ || !grad_cam_enabled_ || !grad_cam_) {
+        return false;
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    if (!last_grad_cam_.valid) {
+        return false;
+    }
+
+    return grad_cam_->apply_jet_colormap(last_grad_cam_, colormap);
+}
+
+void EpdEngine::set_grad_cam_enable(bool enable) {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    if (enable && !grad_cam_) {
+        grad_cam_ = std::make_unique<GradCam>();
+        GradCamConfig gc_cfg = config_.grad_cam;
+        if (!grad_cam_->init(gc_cfg, config_.grad_cam.conv_channels,
+                            config_.grad_cam.conv_spatial_size)) {
+            grad_cam_.reset();
+            grad_cam_enabled_ = false;
+            return;
+        }
+    }
+
+    grad_cam_enabled_ = enable;
+
+    if (!enable && grad_cam_) {
+        grad_cam_->reset();
+    }
 }
 
 }

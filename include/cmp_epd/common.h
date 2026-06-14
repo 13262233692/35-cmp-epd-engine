@@ -63,6 +63,21 @@ enum class EpdStatus {
     NOT_READY = 5
 };
 
+struct GradCamConfig {
+    bool enable = true;
+    float trigger_threshold = 0.90f;
+    int32_t target_conv_layer_index = -1;
+    std::string target_conv_layer_name;
+    int32_t heatmap_width = 200;
+    int32_t heatmap_height = 200;
+    float wafer_diameter_mm = 300.0f;
+    bool apply_colormap = true;
+    int32_t min_contour_area_pct = 5;
+    bool enable_high_quality_upsample = true;
+    int32_t conv_channels = 64;
+    int32_t conv_spatial_size = 512;
+};
+
 struct EpdConfig {
     int32_t wave_channels = DEFAULT_WAVE_CHANNELS;
     int32_t sample_rate_hz = DEFAULT_SAMPLE_RATE_HZ;
@@ -74,6 +89,8 @@ struct EpdConfig {
     std::string trt_engine_path;
     bool enable_cuda = true;
     int32_t gpu_device_id = 0;
+
+    GradCamConfig grad_cam;
 };
 
 inline uint64_t current_time_us() {

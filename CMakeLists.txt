@@ -26,6 +26,7 @@ set(EPD_SOURCES
     src/tensor_reorganizer.cpp
     src/trt_engine.cpp
     src/epd_engine.cpp
+    src/grad_cam.cpp
 )
 
 set(EPD_HEADERS
@@ -34,6 +35,7 @@ set(EPD_HEADERS
     include/cmp_epd/tensor_reorganizer.h
     include/cmp_epd/trt_engine.h
     include/cmp_epd/epd_engine.h
+    include/cmp_epd/grad_cam.h
 )
 
 add_library(cmp_epd SHARED ${EPD_SOURCES} ${EPD_HEADERS})

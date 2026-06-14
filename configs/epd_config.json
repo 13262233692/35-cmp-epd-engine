@@ -21,5 +21,17 @@
         "prob_smooth_window": 5,
         "streak_threshold": 3,
         "min_confidence": 0.5
+    },
+    "grad_cam": {
+        "enable": true,
+        "trigger_threshold": 0.90,
+        "target_conv_layer": "conv_last",
+        "heatmap_width": 200,
+        "heatmap_height": 200,
+        "wafer_diameter_mm": 300.0,
+        "apply_colormap": true,
+        "high_quality_upsample": true,
+        "conv_channels": 64,
+        "conv_spatial_size": 512
     }
 }

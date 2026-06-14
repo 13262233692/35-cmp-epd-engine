@@ -4,6 +4,7 @@
 #include "sg_filter.h"
 #include "tensor_reorganizer.h"
 #include "trt_engine.h"
+#include "grad_cam.h"
 #include <memory>
 #include <mutex>
 #include <atomic>
@@ -149,6 +150,16 @@ public:
 
     EpdStatus check_endpoint(const EpdResult& result) const;
 
+    bool is_grad_cam_enabled() const { return grad_cam_enabled_ && grad_cam_ != nullptr; }
+
+    bool get_last_grad_cam(GradCamResult& result) const;
+
+    bool trigger_grad_cam_now(GradCamResult& result);
+
+    bool get_grad_cam_colormap(std::vector<HeatmapPixel>& colormap) const;
+
+    void set_grad_cam_enable(bool enable);
+
 private:
     void update_statistics(uint64_t latency_us);
     bool smooth_probability(float& prob);
@@ -181,6 +192,12 @@ private:
 
     uint64_t batch_start_frame_;
     bool lstm_reset_required_;
+
+    std::unique_ptr<GradCam> grad_cam_;
+    bool grad_cam_enabled_;
+    mutable GradCamResult last_grad_cam_;
+    std::atomic<bool> grad_cam_dirty_;
+    int32_t grad_cam_trigger_count_;
 };
 
 }
